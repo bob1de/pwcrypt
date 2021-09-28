@@ -1,0 +1,187 @@
+#!/bin/sh -e
+#
+# This file is part of pwcryptfs (https://github.com/bob1de/pwcryptfs).
+# Copyright (c) 2021 Robert Schindler.
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, version 3.
+#
+# This program is distributed in the hope that it will be useful, but
+# WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+# General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <http://www.gnu.org/licenses/>.
+
+
+# Environment variable defaults
+[ -z "$PWC_GCFS_INIT_OPTS" ] && PWC_GCFS_INIT_OPTS="-devrandom -scryptn 19"
+[ -z "$PWC_GCFS_MOUNT_OPTS" ] && PWC_GCFS_MOUNT_OPTS=""
+[ -z "$PWC_POSTMOUNT_CMD" ] && PWC_POSTMOUNT_CMD="$SHELL; clear"
+[ -z "$PWC_STORE" ] && PWC_STORE="$HOME/.pwcryptfs-store"
+PWC_STORE="$(realpath -ms "$PWC_STORE")"
+
+# Probably works with earlier versions too, but not tested
+GCFS_MIN_VERSION="1.6.0"
+
+PROGNAME="$(basename "$0")"
+USAGE="\
+Usage: $PROGNAME <subcommand>
+   or: $PROGNAME {-h|--help}
+
+This is a thin wrapper around the excellent gocryptfs program, which
+allows to store sensitive data in an encrypted form inside a regular
+file system directory.
+
+It was originally created to securely store passwords, hence the name,
+but you can of course throw any kind of files into the encrypted data
+store, of which a cleartext view is mounted by fuse-based gocryptfs into a
+temporary directory only the current user has access to.
+Most notably, the data store created by this program is a regular
+gocryptfs directory, meaning that you are not forced to use this wrapper
+for working with it, should you decide to drop it one day.
+
+After mounting the encrypted data store, a shell is started in the
+mountpoint directory, allowing the user to work with the plain,
+unencrypted view of the files in whatever way required.
+When done and the shell was left, the data store is again unmounted
+automatically so that no further access is possible.
+
+The behavior can be tweaked in many ways by passing environment
+variables. For instance, a different application (e.g. a graphical file
+manager) can be started instead of the shell after mounting.
+
+Options:
+  -h, --help
+    show this help and exit
+
+Subcommands:
+  init
+    initialize a new data store (PWC_STORE must be absent or empty)
+  mount (default)
+    mount an existing data store and start a shell in the mountpoint
+    directory
+  passwd
+    change password of an existing data store
+
+Environment Variables:
+  PWC_GCFS_INIT_OPTS (default: '-devrandom -scryptn 19')
+    extra options to pass to gocryptfs when using the init subcommand
+    to create a data store
+  PWC_GCFS_MOUNT_OPTS (default: '')
+    extra options to pass to gocryptfs when using the mount subcommand
+  PWC_MOUNTPOINT
+    if set, the mount subcommand will mount the data store to this
+    directory rather than creating a temporary one
+  PWC_POSTMOUNT_CMD (default: '\$SHELL; clear')
+    shell command(s) executed by the mount subcommand inside the
+    mountpoint directory after mounting the data store
+  PWC_STORE (default: '\$HOME/.pwcryptfs-store')
+    path to directory for storing encrypted files
+"
+
+
+cmd_init() {
+  if [ -e "$PWC_STORE" ] && [ -n "$(ls -A "$PWC_STORE")" ]; then
+    echo "PWC_STORE $PWC_STORE is not empty, not initializing." >&2
+    exit 1
+  fi
+  echo "Initializing data store in $PWC_STORE ..." >&2
+  [ -e "$PWC_STORE" ] || mkdir -m 0700 -p "$PWC_STORE"
+  echo "Choose a strong password for accessing the data store." >&2
+  echo "Note that there is NO way of recovering your data without the password." >&2
+  sh -c "gocryptfs -quiet -init $PWC_GCFS_INIT_OPTS '$PWC_STORE'"
+  echo "Data store initialized, now run '$PROGNAME' in order to mount it." >&2
+}
+
+
+cmd_mount_cleanup() {
+  if [ -d "$mountdir" ]; then
+    if mountpoint -q "$mountdir"; then
+      echo "Unmounting ..." >&2
+      fusermount -u -z "$mountdir" || true
+    fi
+    [ -z "$PWC_MOUNTPOINT" ] && rmdir "$mountdir"
+  fi
+}
+
+cmd_mount() {
+  if [ ! -d "$PWC_STORE" ]; then
+    echo "PWC_STORE $PWC_STORE: No such directory" >&2
+    echo "Run '$PROGNAME init' first to initialize a data store." >&2
+    exit 1
+  fi
+  if [ -n "$PWC_MOUNTPOINT" ]; then
+    mountdir="$(realpath -m "$PWC_MOUNTPOINT")"
+    mkdir -p "$mountdir"
+  else
+    mountdir="$(mktemp -d -t pwcryptfs.XXXXXXXX)"
+  fi
+  # EXIT + SIGINT + SIGTERM
+  trap 'cmd_mount_cleanup' 0 2 15
+  echo "Mounting $PWC_STORE to $mountdir ..." >&2
+  sh -c "gocryptfs -quiet $PWC_GCFS_MOUNT_OPTS '$PWC_STORE' '$mountdir'"
+  echo "Executing post-mount command ..." >&2
+  (cd "$mountdir"; sh -c "$PWC_POSTMOUNT_CMD")
+}
+
+
+cmd_passwd() {
+  if [ ! -d "$PWC_STORE" ]; then
+    echo "PWC_STORE $PWC_STORE: No such directory" >&2
+    exit 1
+  fi
+  echo "Changing password of $PWC_STORE ..." >&2
+  echo "You're first asked for the current password and then for a new one." >&2
+  gocryptfs -quiet -passwd "$PWC_STORE"
+}
+
+
+# Command availability and version checking
+
+if ! command -v gocryptfs > /dev/null; then
+  echo "The gocryptfs command is missing on your system. Please install it." >&2
+  exit 1
+fi
+
+gcfs_version="$(gocryptfs -version 2>/dev/null | grep -Po '(?i)^gocryptfs +\K\d+\.\d+\.\d+' || true)"
+if [ -z "$gcfs_version" ]; then
+  echo "The gocryptfs version installed is not compatible." >&2
+  echo "Please install at least version $GCFS_MIN_VERSION." >&2
+  exit 1
+fi
+gcfs_upper_version="$(echo "$GCFS_MIN_VERSION\n$gcfs_version" | sort -V | tail -n1)"
+if [ "$gcfs_upper_version" != "$gcfs_version" ]; then
+  echo "The installed version of gocryptfs ($gcfs_version) is too old." >&2
+  echo "Please upgrade to at least version $GCFS_MIN_VERSION." >&2
+  exit 1
+fi
+
+
+# Argument parsing and execution
+
+if [ $# -eq 0 ]; then
+  cmd_mount
+  exit 0
+fi
+
+case "$1" in
+  "-h"|"--help")
+    echo "$USAGE" >&2
+    ;;
+  "init")
+    cmd_init
+    ;;
+  "mount")
+    cmd_mount
+    ;;
+  "passwd")
+    cmd_passwd
+    ;;
+  *)
+    echo "Invalid argument: $1" >&2
+    echo "Run '$PROGNAME --help' to see available options." >&2
+    exit 1
+esac
