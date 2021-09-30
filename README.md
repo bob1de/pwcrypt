@@ -1,7 +1,7 @@
 # pwcryptfs
 
 ```
-Usage: pwcryptfs <subcommand>
+Usage: pwcryptfs [<subcommand>]
    or: pwcryptfs {-h|--help}
 
 This is a thin wrapper around the excellent gocryptfs program, which
@@ -33,18 +33,17 @@ Options:
 Subcommands:
   init
     initialize a new data store (PWC_STORE must be absent or empty)
-  mount (default)
+  mount (default for when no subcommand is given)
     mount an existing data store and start a shell in the mountpoint
     directory
   passwd
     change password of an existing data store
 
 Environment Variables:
-  PWC_GCFS_INIT_OPTS (default: '-devrandom -scryptn 19')
-    extra options to pass to gocryptfs when using the init subcommand
-    to create a data store
+  PWC_GCFS_INIT_OPTS (default: 'devrandom,scryptn=19')
+    value of gocryptfs -o option when using the init subcommand
   PWC_GCFS_MOUNT_OPTS (default: '')
-    extra options to pass to gocryptfs when using the mount subcommand
+    value of gocryptfs -o option when using the mount subcommand
   PWC_MOUNTPOINT
     if set, the mount subcommand will mount the data store to this
     directory rather than creating a temporary one
@@ -52,5 +51,6 @@ Environment Variables:
     shell command(s) executed by the mount subcommand inside the
     mountpoint directory after mounting the data store
   PWC_STORE (default: '$HOME/.pwcryptfs-store')
-    path to directory for storing encrypted files
+    path to directory for storing encrypted files (referred to as
+    data store)
 ```

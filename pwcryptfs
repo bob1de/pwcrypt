@@ -17,7 +17,7 @@
 
 
 # Environment variable defaults
-[ -z "$PWC_GCFS_INIT_OPTS" ] && PWC_GCFS_INIT_OPTS="-devrandom -scryptn 19"
+[ -z "$PWC_GCFS_INIT_OPTS" ] && PWC_GCFS_INIT_OPTS="devrandom,scryptn=19"
 [ -z "$PWC_GCFS_MOUNT_OPTS" ] && PWC_GCFS_MOUNT_OPTS=""
 [ -z "$PWC_POSTMOUNT_CMD" ] && PWC_POSTMOUNT_CMD="$SHELL; clear"
 [ -z "$PWC_STORE" ] && PWC_STORE="$HOME/.pwcryptfs-store"
@@ -28,7 +28,7 @@ GCFS_MIN_VERSION="1.6.0"
 
 PROGNAME="$(basename "$0")"
 USAGE="\
-Usage: $PROGNAME <subcommand>
+Usage: $PROGNAME [<subcommand>]
    or: $PROGNAME {-h|--help}
 
 This is a thin wrapper around the excellent gocryptfs program, which
@@ -60,18 +60,17 @@ Options:
 Subcommands:
   init
     initialize a new data store (PWC_STORE must be absent or empty)
-  mount (default)
+  mount (default for when no subcommand is given)
     mount an existing data store and start a shell in the mountpoint
     directory
   passwd
     change password of an existing data store
 
 Environment Variables:
-  PWC_GCFS_INIT_OPTS (default: '-devrandom -scryptn 19')
-    extra options to pass to gocryptfs when using the init subcommand
-    to create a data store
+  PWC_GCFS_INIT_OPTS (default: 'devrandom,scryptn=19')
+    value of gocryptfs -o option when using the init subcommand
   PWC_GCFS_MOUNT_OPTS (default: '')
-    extra options to pass to gocryptfs when using the mount subcommand
+    value of gocryptfs -o option when using the mount subcommand
   PWC_MOUNTPOINT
     if set, the mount subcommand will mount the data store to this
     directory rather than creating a temporary one
@@ -79,7 +78,8 @@ Environment Variables:
     shell command(s) executed by the mount subcommand inside the
     mountpoint directory after mounting the data store
   PWC_STORE (default: '\$HOME/.pwcryptfs-store')
-    path to directory for storing encrypted files
+    path to directory for storing encrypted files (referred to as
+    data store)
 "
 
 
@@ -90,9 +90,9 @@ cmd_init() {
   fi
   echo "Initializing data store in $PWC_STORE ..." >&2
   [ -e "$PWC_STORE" ] || mkdir -m 0700 -p "$PWC_STORE"
-  echo "Choose a strong password for accessing the data store." >&2
-  echo "Note that there is NO way of recovering your data without the password." >&2
-  sh -c "gocryptfs -quiet -init $PWC_GCFS_INIT_OPTS '$PWC_STORE'"
+  echo "Choose a strong password for securing your data." >&2
+  echo "Note that there is NO way of recovering any data if you loose the password." >&2
+  gocryptfs -quiet -init "$PWC_STORE" -o "$PWC_GCFS_INIT_OPTS"
   echo "Data store initialized, now run '$PROGNAME' in order to mount it." >&2
 }
 
@@ -122,8 +122,8 @@ cmd_mount() {
   # EXIT + SIGINT + SIGTERM
   trap 'cmd_mount_cleanup' 0 2 15
   echo "Mounting $PWC_STORE to $mountdir ..." >&2
-  sh -c "gocryptfs -quiet $PWC_GCFS_MOUNT_OPTS '$PWC_STORE' '$mountdir'"
-  echo "Executing post-mount command ..." >&2
+  gocryptfs -quiet "$PWC_STORE" "$mountdir" -o "$PWC_GCFS_MOUNT_OPTS"
+  echo "Executing: $PWC_POSTMOUNT_CMD" >&2
   (cd "$mountdir"; sh -c "$PWC_POSTMOUNT_CMD")
 }
 
@@ -181,7 +181,7 @@ case "$1" in
     cmd_passwd
     ;;
   *)
-    echo "Invalid argument: $1" >&2
-    echo "Run '$PROGNAME --help' to see available options." >&2
+    echo "$PROGNAME: Bad argument: $1" >&2
+    echo "Run '$PROGNAME --help' for available options." >&2
     exit 1
 esac
