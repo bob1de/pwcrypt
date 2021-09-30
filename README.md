@@ -4,6 +4,8 @@
 Usage: pwcryptfs [<subcommand>]
    or: pwcryptfs {-h|--help}
 
+Version 1.0.0
+
 This is a thin wrapper around the excellent gocryptfs program, which
 allows to store sensitive data in an encrypted form inside a regular
 file system directory.
@@ -29,6 +31,8 @@ manager) can be started instead of the shell after mounting.
 Options:
   -h, --help
     show this help and exit
+  --version
+    show program's version number and exit
 
 Subcommands:
   init

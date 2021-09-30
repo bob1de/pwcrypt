@@ -27,9 +27,12 @@ PWC_STORE="$(realpath -ms "$PWC_STORE")"
 GCFS_MIN_VERSION="1.6.0"
 
 PROGNAME="$(basename "$0")"
+PROGVERSION="1.0.0"
 USAGE="\
 Usage: $PROGNAME [<subcommand>]
    or: $PROGNAME {-h|--help}
+
+Version $PROGVERSION
 
 This is a thin wrapper around the excellent gocryptfs program, which
 allows to store sensitive data in an encrypted form inside a regular
@@ -56,6 +59,8 @@ manager) can be started instead of the shell after mounting.
 Options:
   -h, --help
     show this help and exit
+  --version
+    show program's version number and exit
 
 Subcommands:
   init
@@ -170,6 +175,9 @@ fi
 case "$1" in
   "-h"|"--help")
     echo "$USAGE" >&2
+    ;;
+  "--version")
+    echo "$PROGNAME $PROGVERSION"
     ;;
   "init")
     cmd_init
